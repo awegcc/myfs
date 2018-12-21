@@ -1,2 +1,2 @@
 # ofs
-object fs
+object to fuse fs
