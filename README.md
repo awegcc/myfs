@@ -1,2 +1,2 @@
-# ofs
-object fs(fuse)
+## myfs
+my fs(fuse)
