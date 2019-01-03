@@ -45,22 +45,16 @@ type Dir struct {
 
 var _ fs.Node = (*Dir)(nil)
 
-func zipAttr(f *zip.File) fuse.Attr {
-	return fuse.Attr{
-		Size:   f.UncompressedSize64,
-		Mode:   f.Mode(),
-		Mtime:  f.ModTime(),
-		Ctime:  f.ModTime(),
-		Crtime: f.ModTime(),
-	}
-}
-
 func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 	if d.file == nil {
 		// root directory
-		*attr = fuse.Attr{Mode: os.ModeDir | 0755}
+		attr.Mode = os.ModeDir | 0755
 	} else {
-		*attr = zipAttr(d.file)
+		attr.Mode = d.file.Mode()
+		attr.Mtime = d.file.ModTime()
+		attr.Ctime = d.file.ModTime()
+		attr.Crtime = d.file.ModTime()
+		attr.Size = d.file.UncompressedSize64
 	}
 	return nil
 }
@@ -72,7 +66,11 @@ type File struct {
 var _ fs.Node = (*File)(nil)
 
 func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
-	*attr = zipAttr(f.file)
+	attr.Mode = f.file.Mode()
+	attr.Mtime = f.file.ModTime()
+	attr.Ctime = f.file.ModTime()
+	attr.Crtime = f.file.ModTime()
+	attr.Size = f.file.UncompressedSize64
 	return nil
 }
 
@@ -172,33 +170,29 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	return res, nil
 }
 
-func mount(path, mountpoint string) error {
-	archive, err := zip.OpenReader(path)
+func mount(zipFile, mnt string) error {
+	archive, err := zip.OpenReader(zipFile)
 	if err != nil {
 		return err
 	}
 	defer archive.Close()
 
-	c, err := fuse.Mount(mountpoint)
+	con, err := fuse.Mount(mnt)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer con.Close()
 
 	filesys := &FS{
 		archive: &archive.Reader,
 	}
-	if err := fs.Serve(c, filesys); err != nil {
+
+	if err := fs.Serve(con, filesys); err != nil {
 		return err
 	}
 
-	// check if the mount process has an error to report
-	<-c.Ready
-	if err := c.MountError; err != nil {
-		return err
-	}
-
-	return nil
+	<-con.Ready
+	return con.MountError
 }
 
 func main() {
@@ -212,9 +206,9 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
-	path := flag.Arg(0)
-	mountpoint := flag.Arg(1)
-	if err := mount(path, mountpoint); err != nil {
+	zipFile := flag.Arg(0)
+	mntpoint := flag.Arg(1)
+	if err := mount(zipFile, mntpoint); err != nil {
 		log.Fatal(err)
 	}
 }
